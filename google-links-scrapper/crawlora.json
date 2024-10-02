@@ -1,0 +1,5 @@
+{
+    "env":{},
+    "entrypoint": ".dist/index.js",
+    "function": "default"
+}
