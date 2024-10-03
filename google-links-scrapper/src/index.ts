@@ -9,16 +9,21 @@ async function sleep(secs: number) {
 
 export default async function GetGoogleLinks({
   searches,
+  profile_link
 }: {
-  searches: string[];
+  searches: string;
+  profile_link: string;
 }) {
+
+
+  const formedData = searches.trim().split("\n").map(v => v.trim())
 
  await browser(async ({puppeteer}) => {
     const page = await puppeteer.newPage();
 
     const linksStore = [];
 
-    for await (const searchs of searches) {
+    for await (const searchs of formedData) {
       await page.goto("https://google.com");
   
       await sleep(2);
