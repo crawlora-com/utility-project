@@ -37,6 +37,8 @@ export default async function GetGoogleLinks({
       const links = await page.$$eval("a", (anchors) =>
         anchors.map((anchor) => anchor.href)
       );
+
+      
   
       linksStore.push({ [searchs]: links });
       // saveOutPut.create({sequence_id, sequence_output: {[searchs]: links}})
