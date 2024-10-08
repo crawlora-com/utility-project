@@ -1,5 +1,98 @@
-import { showBrowser } from "./config";
-import { browser } from "crawlora";
+import { browser, wait } from "crawlora";
+import { ElementHandle, Page } from "puppeteer";
+
+
+async function scrapeBusinessDetails(page: Page, allBusinessData: any[], query: string, debug: debug.Debugger) {
+
+  const selector = ".fontTitleLarge"
+
+  debug(selector)
+
+  await page.waitForSelector(selector);
+
+
+  const div = 'div[aria-label="'+ query +'"]'
+
+
+  debug(div)
+
+  await page.$(div)
+
+
+  const allTheAvailableElement = "div.Nv2PK.tH5CWc.THOPZb";
+  debug(allTheAvailableElement)
+  const allTheData = await page.$$(allTheAvailableElement)
+
+
+  const data = await page.evaluate(() => {
+    const results: any[] = [];
+    const elements = document.querySelectorAll('div.Nv2PK.tH5CWc.THOPZb');
+
+    elements.forEach((element) => {
+        const name = (element.querySelector('a[aria-label]') as HTMLAnchorElement)?.getAttribute('aria-label');
+        const link = (element.querySelector('a[aria-label]') as HTMLAnchorElement)?.href;
+        const rating = (element.querySelector('span[role="img"] span.MW4etd') as HTMLElement)?.textContent;
+        const reviewCount = (element.querySelector('span.UY7F9') as HTMLElement)?.textContent;
+        const status = (element.querySelector('span.fontBodyMedium') as HTMLElement)?.textContent;
+
+         // Generic functions to extract type and address
+         const extractType = () => {
+          const typeElement = element.querySelector('span');
+          return typeElement ? typeElement.textContent?.trim() : null;
+      };
+
+      const extractAddress = () => {
+          const addressElements = element.querySelectorAll('span');
+          // Combine text content of all spans to form the address
+          const addressText = Array.from(addressElements).map(span => span.textContent?.trim()).join(' ');
+          return addressText.includes("·") ? addressText.split('·')[1].trim() : null; // Adjust logic as per structure
+      };
+
+      const type = extractType();
+      const address = extractAddress();
+
+        results.push({ name, link, rating, reviewCount, type, address, status });
+    });
+
+
+    return results;
+});
+
+console.log(data)
+
+allBusinessData = data
+
+
+
+}
+
+type NonNegativeInteger<T extends number> = number extends T ? never : `${T}` extends `-${string}` | `${string}.${string}` ? never : T;
+
+export async function autoScroll(page: Page, wait: <N extends number>(sec: NonNegativeInteger<N>) => Promise<void>){
+  let currentElement = 0;
+
+  const scrollElements = '.w6VYqd'
+  while (true) {
+    let elementsLength = await page.evaluate((scrollElements) => {
+      return document.querySelectorAll(scrollElements).length;
+    }, scrollElements);
+    for (; currentElement < elementsLength; currentElement++) {
+      await wait(2);
+      await page.evaluate(
+        (currentElement, scrollElements) => {
+          document.querySelectorAll(scrollElements)[currentElement].scrollIntoView();
+        },
+        currentElement,
+        scrollElements
+      );
+    }
+    await wait(5);
+    let newElementsLength = await page.evaluate((scrollElements) => {
+      return document.querySelectorAll(scrollElements).length;
+    }, scrollElements);
+    if (newElementsLength === elementsLength) break;
+  }
+}
 
 export default async function GetGoogleBusinessData({
   searchQuery,
@@ -14,120 +107,51 @@ export default async function GetGoogleBusinessData({
   await browser(
     async ({ page, wait, debug }) => {
       try {
-        debug("Start >>> Navigating to Google Maps");
+        let allBusinessData: any[] = [];
 
+        // Navigate to Google Maps
         await page.goto("https://www.google.com/maps", {
           waitUntil: "networkidle2",
           timeout: 180000,
         });
 
-        const allBusinessData = [];
+        await page.setViewport({
+          width: 1200,
+          height: 800,
+        });
 
+        // Loop through each search query
         for (const query of formedData) {
-          // Retry strategy for each search query
+          try {
+            debug(`Searching for query: ${query}`);
 
-          let retries = 3;
-          while (retries > 0) {
-            try {
-              debug(`Searching for query: ${query}`);
+            // Clear the search box and enter the query
+            await page.waitForSelector("input#searchboxinput", { timeout: 30000 });
+            await page.click("input#searchboxinput", { clickCount: 3 });
+            await page.keyboard.press("Backspace");
+            await page.type("input#searchboxinput", query, { delay: 50 });
+            await page.keyboard.press("Enter");
 
-              // Clear the search box if it's not the first search
-              await page.waitForSelector("input#searchboxinput", {
-                timeout: 30000,
-              });
-              await page.click("input#searchboxinput", { clickCount: 3 });
-              await page.keyboard.press("Backspace");
+            await page.waitForNavigation({waitUntil: ['networkidle2']})
 
-              await page.type("input#searchboxinput", query, { delay: 50 });
-              await page.keyboard.press("Enter");
+            // Scrape the initial set of results
+            await scrapeBusinessDetails(page, allBusinessData, query, debug);
 
-              // Wait for the search results to load
-              await page.waitForSelector(".hfpxzc", { timeout: 60000 });
 
-              let businessData = [];
-              for (let i = 0; i < 10; i++) {
-                // Retry per business result if any step fails
-                let resultRetries = 3;
-                while (resultRetries > 0) {
-                  try {
-                    const results = await page.$$(".hfpxzc");
-                    if (results.length === 0 || i >= results.length) {
-                      debug(
-                        "No business results found or index out of bounds."
-                      );
-                      throw new Error(
-                        "No business results or result out of bounds."
-                      );
-                    }
+            let shouldRun = true
 
-                    await results[i].click();
-
-                    // Wait for the business details popup
-                    await page.waitForSelector(".DUwDvf", { timeout: 30000 });
-
-                    // Extract business details
-                    const business = await page.evaluate(() => {
-                      const name =
-                        document.querySelector(".DUwDvf")?.textContent ||
-                        "Name not found";
-                      const address =
-                        document.querySelector(".Io6YTe")?.textContent ||
-                        "Address not found";
-                      const website =
-                        document
-                          .querySelector("a.CsEnBe")
-                          ?.getAttribute("href") || "Website not found";
-                      const rating =
-                        document.querySelector(
-                          '.F7nice span[aria-hidden="true"]'
-                        )?.textContent || "Rating not found";
-                      const reviews =
-                        document.querySelector(
-                          '.F7nice span[aria-label*="reviews"]'
-                        )?.textContent || "Number of reviews not found";
-
-                      return {
-                        name,
-                        address,
-                        website,
-                        rating,
-                        reviews,
-                      };
-                    });
-
-                    businessData.push(business);
-
-                    // Close the business details popup
-                    const closeButton = await page.$(".yHy1rc");
-                    if (closeButton) {
-                      await closeButton.click();
-                    } else {
-                      debug(`Close button not found for result ${i + 1}.`);
-                    }
-
-                    await wait(1); // Short delay
-                    break; // Break out of inner retry loop after success
-                  } catch (resultError) {
-                    debug(`Error processing result ${i}: ${resultError}`);
-                    resultRetries -= 1;
-                    await wait(2);
-                    if (resultRetries === 0) {
-                      debug(`Skipping result ${i} after multiple retries.`);
-                    }
-                  }
-                }
-              }
-
-              allBusinessData.push(...businessData);
-              break; // Break out of outer retry loop after successful query
-            } catch (queryError) {
-              debug(`Error during query "${query}": ${queryError}`);
-              retries -= 1;
-              await wait(10); // Wait 10 seconds before retrying query
-              if (retries === 0) {
-                debug(`Skipping query "${query}" after multiple retries.`);
-              }
+            while(shouldRun){
+              await scrapeBusinessDetails(page, allBusinessData, query, debug);
+              await autoScroll(page, wait);
+              await wait(5)
+              console.log("results", allBusinessData, allBusinessData.length)
             }
+
+
+            await wait(5);
+          } catch (queryError) {
+            debug(`Error during query "${query}": ${queryError}`);
+            await wait(5);
           }
         }
 
@@ -137,6 +161,6 @@ export default async function GetGoogleBusinessData({
         debug(`An error occurred: ${error}`);
       }
     },
-    { showBrowser }
+    { showBrowser: true }
   );
 }
