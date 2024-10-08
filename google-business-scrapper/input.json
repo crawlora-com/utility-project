@@ -1,0 +1,9 @@
+[
+    {
+        "type": "textarea",
+        "default_value": "",
+        "placeholder": "crawlora",
+        "name": "searches",
+        "required": true
+    }
+]

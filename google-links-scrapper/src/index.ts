@@ -1,18 +1,50 @@
-import puppeteer from "puppeteer"
+import { browser } from "crawlora";
+async function sleep(secs: number) {
+  return new Promise((res) => {
+    setTimeout(() => {
+      res(true);
+    }, secs * 1000);
+  });
+}
 
-export default async function (args = {}){
-    // code run
+export default async function GetGoogleLinks({
+  searches,
+  profile_link,
+}: {
+  searches: string;
+  profile_link: string;
+}) {
+  const formedData = searches
+    .trim()
+    .split("\n")
+    .map((v) => v.trim());
 
-    const desktop = await puppeteer.launch({ headless: false })
+  await browser(
+    async ({ puppeteer }) => {
+      const page = await puppeteer.newPage();
 
-    // code 
+      const linksStore = [];
 
-    const page = await desktop.newPage();
+      for await (const searchs of formedData) {``
+        await page.goto("https://google.com");
 
-    await page.goto("https://crawlora.com")
+        await sleep(2);
 
-    await desktop.close()
+        await page.type('textarea[name="q"]', searchs);
 
+        await page.keyboard.press("Enter");
 
+        await page.waitForNavigation({ waitUntil: ["networkidle2"] });
 
+        const links = await page.$$eval("a", (anchors) =>
+          anchors.map((anchor) => anchor.href)
+        );
+
+        linksStore.push({ [searchs]: links });
+        // saveOutPut.create({sequence_id, sequence_output: {[searchs]: links}})
+        await sleep(2);
+      }
+    },
+    { headless: false, args: ["--no-sandbox"] }
+  );
 }
